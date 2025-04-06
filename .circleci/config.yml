@@ -1,18 +1,21 @@
 version: 2.1
 
+orbs:
+  python: circleci/python@2.1.1
+
 jobs:
-  build:
+  build-and-test:
     docker:
       - image: cimg/python:3.11
     steps:
       - checkout
-
+      
       - run:
-          name: Install dependencies
+          name: Set up virtual environment
           command: |
             python -m venv venv
             . venv/bin/activate
-            pip install pytest
+            pip install --upgrade pip pytest requests
 
       - run:
           name: Run unit tests
@@ -21,16 +24,50 @@ jobs:
             pytest --junitxml=test-results/results.xml
 
       - run:
-          name: Install SonarScanner
+          name: Install SonarScanner and run SonarCloud analysis
           command: |
             wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
             unzip sonar-scanner-cli-5.0.1.3006-linux.zip
             mv sonar-scanner-5.0.1.3006-linux sonar-scanner
             export PATH=$PATH:$(pwd)/sonar-scanner/bin
-            sonar-scanner -Dsonar.login=$SONAR_TOKEN
+            ./sonar-scanner/bin/sonar-scanner -Dsonar.login=$SONAR_TOKEN
+
+      - run:
+          name: Run Dependency-Check
+          command: |
+            curl -L -o dependency-check.zip https://github.com/jeremylong/DependencyCheck/releases/download/v8.4.0/dependency-check-8.4.0-release.zip
+            unzip dependency-check.zip -d dependency-check
+            mkdir -p reports
+            ./dependency-check/dependency-check/bin/dependency-check.sh --project MyProject --scan . --format ALL --out reports
+
+      - persist_to_workspace:
+          root: .
+          paths:
+            - reports
+
+  docker-build-and-push:
+    docker:
+      - image: cimg/python:3.11
+    steps:
+      - checkout
+      - setup_remote_docker
+
+      - run:
+          name: Build Docker Image
+          command: |
+            docker build -t $DOCKERHUB_USERNAME/my-devops-project:latest .
+
+      - run:
+          name: Push to Docker Hub
+          command: |
+            echo $DOCKERHUB_PASSWORD | docker login -u $DOCKERHUB_USERNAME --password-stdin
+            docker push $DOCKERHUB_USERNAME/my-devops-project:latest
 
 workflows:
   version: 2
-  build-and-scan:
+  build-test-analyze:
     jobs:
-      - build
+      - build-and-test
+      - docker-build-and-push:
+          requires:
+            - build-and-test
