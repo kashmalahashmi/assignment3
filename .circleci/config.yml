@@ -3,23 +3,34 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: cimg/python:3.8  # Use the appropriate image for your project
+      - image: cimg/python:3.11
     steps:
       - checkout
 
-      # Install SonarScanner
+      - run:
+          name: Install dependencies
+          command: |
+            python -m venv venv
+            . venv/bin/activate
+            pip install pytest
+
+      - run:
+          name: Run unit tests
+          command: |
+            . venv/bin/activate
+            pytest --junitxml=test-results/results.xml
+
       - run:
           name: Install SonarScanner
           command: |
-            wget https://dl.bintray.com/sonarsource/sonar-scanner-cli/sonar-scanner-cli-4.7.0.2747-linux.zip
-            unzip sonar-scanner-cli-4.7.0.2747-linux.zip -d /opt/
+            wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+            unzip sonar-scanner-cli-5.0.1.3006-linux.zip
+            mv sonar-scanner-5.0.1.3006-linux sonar-scanner
+            export PATH=$PATH:$(pwd)/sonar-scanner/bin
+            sonar-scanner -Dsonar.login=$SONAR_TOKEN
 
-      # Run SonarCloud Analysis
-      - run:
-          name: Run SonarCloud Analysis
-          command: |
-            /opt/sonar-scanner-4.7.0.2747-linux/bin/sonar-scanner \
-              -Dsonar.projectKey=$SONAR_PROJECT_KEY \
-              -Dsonar.organization=$SONAR_ORG \
-              -Dsonar.login=$SONAR_TOKEN \
-              -Dsonar.sources=./src  # Adjust this path to where your source code is
+workflows:
+  version: 2
+  build-and-scan:
+    jobs:
+      - build
